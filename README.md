@@ -1,6 +1,6 @@
 # Machine Learning App for Predicting Aqi
 
-![alt text](https://github.com/PanosKats/OpenUp-Thessaloniki-Climate-2025/blob/master/Logo.png"Logo")
+![alt text](https://github.com/PanosKats/OpenUp-Thessaloniki-Climate-2025/blob/master/Logo.png "Logo")
 
 This App provides interactive forecasting and of Thessaloniki's Air Quality Index (AQI) using historical pollution and open weather data for correlation and visualizations.
 • AQI forecasting using Facebook Prophet, with historical air quality data from Thessaloniki.
@@ -9,7 +9,7 @@ This App provides interactive forecasting and of Thessaloniki's Air Quality Inde
 
 ## Demo App
 
-[![Streamlit App](https://aqi-predicting-app.streamlit.app//))
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://aqi-predicting-app.streamlit.app//))
 
 
 
