@@ -1,117 +1,165 @@
 import streamlit as st
 import pandas as pd
 from prophet import Prophet
-from prophet.plot import plot_plotly
+from prophet.plot import plot_plotly, plot_components_plotly
 import datetime
+import plotly.express as px
+import plotly.graph_objects as go
 
-# Title
-st.title("🌫️ Unified AQI Forecast & Daily Estimation")
 
-# Sidebar Controls
-st.sidebar.title("🔧 Settings")
-forecast_days = st.sidebar.slider("Forecast period (days)", min_value=7, max_value=365, value=30)
 
-enable_manual = st.sidebar.checkbox("Estimate Tomorrow's AQI from Today's Pollutant Data")
 
-# Default Placeholder Values for Pollutants (you can adjust these as needed)
-placeholder_values = {
-    "pm10": 30.0,  # Example: Moderate level
-    "pm2.5": 20.0,  # Example: Moderate level
-    "co": 0.5,      # Example: CO level in mg/m³
-    "no": 20.0,     # Example: Nitrogen monoxide level in µg/m³
-    "no2": 40.0,    # Example: Nitrogen dioxide level in µg/m³
-    "so2": 10.0,    # Example: Sulfur dioxide level in µg/m³
-    "o3": 50.0,     # Example: Ozone level in µg/m³
-}
+DATA_URL = "https://raw.githubusercontent.com/PanosKats/OpenUp-Thessaloniki-Climate-2025/master/Data/Final_Data.csv"
+WEATHER_DATA_URL = "https://raw.githubusercontent.com/PanosKats/OpenUp-Thessaloniki-Climate-2025/master/Data/Weather_1_1_22_30_06_24.csv"
 
-# Manual Input Section
-manual_input = {}
-selected_date = datetime.date.today()
-if enable_manual:
-    st.sidebar.markdown("### 🧪 Pollutant Data at 12:00 PM")
-    selected_date = st.sidebar.date_input("Date of measurement", value=datetime.date.today())
-    manual_input = {
-        "pm10": st.sidebar.number_input("PM10 (µg/m³)", min_value=0.0, step=1.0, value=placeholder_values["pm10"]),
-        "pm2.5": st.sidebar.number_input("PM2.5 (µg/m³)", min_value=0.0, step=1.0, value=placeholder_values["pm2.5"]),
-        "co": st.sidebar.number_input("CO (mg/m³)", min_value=0.0, step=0.1, value=placeholder_values["co"]),
-        "no": st.sidebar.number_input("NO (µg/m³)", min_value=0.0, step=1.0, value=placeholder_values["no"]),
-        "no2": st.sidebar.number_input("NO2 (µg/m³)", min_value=0.0, step=1.0, value=placeholder_values["no2"]),
-        "so2": st.sidebar.number_input("SO2 (µg/m³)", min_value=0.0, step=1.0, value=placeholder_values["so2"]),
-        "o3": st.sidebar.number_input("O3 (µg/m³)", min_value=0.0, step=1.0, value=placeholder_values["o3"]),
-    }
 
-# --- Load Data ---
-DATA_URL = "https://raw.githubusercontent.com/PanosKats/OpenUp-Thessaloniki-Climate-2025/refs/heads/master/Data/Final_Data.csv"  # Replace with your raw CSV URL
 
+
+# AQI Data
 @st.cache_data
-def load_data(url):
-    df = pd.read_csv(url)
-    df['time'] = pd.to_datetime(df['time'], dayfirst=True)
+def load_aqi_data():
+    df = pd.read_csv(DATA_URL)
+    df['time'] = pd.to_datetime(df['time'])
     df = df.rename(columns={'time': 'ds'})
     return df
 
-try:
-    # Load and prepare data
-    df = load_data(DATA_URL)
-    df_multi = df[['ds', 'aqi', 'pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']].dropna()
-    df_multi = df_multi.rename(columns={'aqi': 'y'})
+# Weather Data 
+@st.cache_data
+def load_weather_data():
+    df = pd.read_csv(WEATHER_DATA_URL)
+    df = df[df["time"] != "time"]  # Remove any redundant header rows
+    df.columns = ['time', 'temperature_2m', 'relative_humidity_2m', 'weather_code', 'precipitation']
+    df['ds'] = pd.to_datetime(df['time'], errors='coerce')
+    df.dropna(subset=['ds'], inplace=True)
+    return df
 
-    st.subheader("📄 Raw AQI Data")
-    st.write(df_multi[['ds', 'y']].tail())
+
+# Time-Lagged Correlation
+def compute_time_lagged_correlation(df, col, lags):
+    correlations = []
+    for lag in lags:
+        shifted = df[col].shift(lag)
+        corr = df['aqi'].corr(shifted)
+        correlations.append(corr)
+    return correlations
+
+
+st.set_page_config(page_title="AQI Forecast App", layout="wide")
+
+
+st.sidebar.title("Aqi Prediction")
+forecast_days = st.sidebar.slider("Forecast period (days)", min_value=7, max_value=365, value=30)
+enable_manual = st.sidebar.checkbox("Estimate AQI from today's pollutant data")
+
+
+
+# INPUT 
+manual_input = {}
+selected_date = datetime.date.today()
+if enable_manual:
+    st.sidebar.markdown("### Pollutant Data at 12:00 PM")
+    selected_date = st.sidebar.date_input("Date of measurement", value=datetime.date.today())
+    default_values = load_aqi_data()[['pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']].mean()
+    manual_input = {
+        key: st.sidebar.number_input(key.upper(), min_value=0.0, step=1.0 if key != 'co' else 0.1, value=float(f"{default_values[key]:.2f}"))
+        for key in ['pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']
+    }
+
+
+
+
+
+
+tabs = st.tabs(["📈 Forecast & Custom Estimation", "Correlation Graphs"])
+
+with tabs[0]:
+    df = load_aqi_data()
+    df_aqi = df[['ds', 'aqi']].dropna()
+
+    st.subheader("AQI Data")
+    st.write(df_aqi.tail())
 
     st.subheader("📉 AQI Time Series Overview")
-    st.line_chart(df_multi.set_index('ds')['y'])
+    st.line_chart(df_aqi.set_index('ds')['aqi'])
 
-    # --- Unified Prophet Model ---
-    st.subheader(f"🔮 Unified Forecast for Next {forecast_days} Days")
-
+    st.subheader(f"Forecasting AQI for the Next {forecast_days} Days")
+    prophet_df = df_aqi.rename(columns={'aqi': 'y'})
     model = Prophet()
-    for reg in ['pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']:
-        model.add_regressor(reg)
-    model.fit(df_multi)
-
-    # Prepare future for multi-day forecast
-    last_date = df_multi['ds'].max()
-    future_days = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=forecast_days)
-    recent_mean = df_multi[['pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']].mean()
-
-    future_df = pd.DataFrame({'ds': future_days})
-    for col in recent_mean.index:
-        future_df[col] = recent_mean[col]
-
-    full_future = pd.concat([df_multi[['ds'] + list(recent_mean.index)], future_df], ignore_index=True)
-    forecast = model.predict(full_future)
+    model.fit(prophet_df)
+    future = model.make_future_dataframe(periods=forecast_days)
+    forecast = model.predict(future)
 
     st.subheader("📈 AQI Forecast")
-    st.plotly_chart(plot_plotly(model, forecast))
+    fig1 = plot_plotly(model, forecast)
+    st.plotly_chart(fig1)
 
-    # --- Custom Hourly Prediction for Tomorrow ---
     if enable_manual:
-        st.subheader("🕛 Forecast Tomorrow's AQI from 12:00 PM to Midnight")
+        st.subheader("Custom AQI Forecast from 12:00 to Midnight")
+        noon_time = datetime.datetime.combine(selected_date, datetime.time(hour=12))
 
-        tomorrow_date = selected_date + datetime.timedelta(days=1)
-        noon_time = datetime.datetime.combine(tomorrow_date, datetime.time(hour=12))
-        hourly_range = pd.date_range(start=noon_time, end=noon_time.replace(hour=23, minute=59), freq='H')
+        manual_row = {'ds': noon_time, **manual_input}
+        manual_df = pd.DataFrame([manual_row])
 
-        # Prepare the dataframe for tomorrow's prediction
-        manual_df = pd.DataFrame({'ds': hourly_range})
-        for col in manual_input:
-            manual_df[col] = manual_input[col]
+        df_multi = df[['ds', 'aqi', 'pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']].dropna().rename(columns={'aqi': 'y'})
+        model_manual = Prophet()
+        for col in ['pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']:
+            model_manual.add_regressor(col)
+        model_manual.fit(df_multi)
 
-        forecast_manual = model.predict(manual_df)
+        future_times = pd.date_range(start=noon_time, end=noon_time.replace(hour=23), freq='H')
+        future_manual = pd.DataFrame({'ds': future_times})
+        for col in ['pm10', 'pm2.5', 'co', 'no', 'no2', 'so2', 'o3']:
+            future_manual[col] = manual_input[col]
 
-        # --- Display Hourly AQI Forecast Table ---
-        st.subheader("📋 Hourly AQI Forecast Table for Tomorrow")
-        forecast_table = forecast_manual[['ds', 'yhat']].rename(columns={'ds': 'Time', 'yhat': 'Predicted AQI'})
-        st.dataframe(forecast_table)
+        forecast_manual = model_manual.predict(future_manual)
 
-        # --- Plot Simple Time Series Graph ---
-        st.subheader("📊 Simple Time Series of Hourly AQI Forecast")
-        st.line_chart(forecast_table.set_index('Time')['Predicted AQI'])
+        st.subheader("Hourly AQI Forecast")
+        fig3 = plot_plotly(model_manual, forecast_manual)
+        st.plotly_chart(fig3)
 
-        # Display the final AQI value at midnight
-        end_aqi = forecast_manual['yhat'].iloc[-1]
-        st.success(f"🎯 Estimated AQI at Midnight Tomorrow: **{end_aqi:.2f}**")
+        st.subheader("Forecast Table")
+        st.dataframe(forecast_manual[['ds', 'yhat']].rename(columns={'ds': 'Time', 'yhat': 'Predicted AQI'}))
 
-except Exception as e:
-    st.error(f"❌ Failed to load data or forecast: {e}")
+        end_of_day_aqi = forecast_manual['yhat'].iloc[-1]
+        st.success(f"Estimated AQI at Midnight: **{end_of_day_aqi:.2f}**")
+
+
+
+
+with tabs[1]:
+    st.header("🌤️ AQI vs Weather")
+
+    df_weather = load_weather_data()
+    df_all = pd.merge(load_aqi_data(), df_weather, on="ds", how="inner")
+
+    st.subheader("🌡️ AQI vs Temperature")
+    fig_temp = px.line(df_all, x='ds', y=['aqi', 'temperature_2m'], title="AQI and Temperature Over Time", labels={'ds': 'Time', 'value': 'Value'})
+    st.plotly_chart(fig_temp)
+
+    st.subheader("💧 AQI vs Relative Humidity")
+    fig_rh = px.line(df_all, x='ds', y=['aqi', 'relative_humidity_2m'], title="AQI and Relative Humidity Over Time", labels={'ds': 'Time', 'value': 'Value'})
+    st.plotly_chart(fig_rh)
+
+    st.subheader("🌧️ AQI vs Precipitation")
+    fig_prec = px.line(df_all, x='ds', y=['aqi', 'precipitation'], title="AQI and Precipitation Over Time", labels={'ds': 'Time', 'value': 'Value'})
+    st.plotly_chart(fig_prec)
+
+    st.subheader("Trends")
+    fig2 = plot_components_plotly(model, forecast)
+    st.plotly_chart(fig2)
+
+    
+
+
+
+
+    st.subheader("Time-Lagged Correlation with AQI")
+    lags = list(range(0, 25))
+
+    for col in ['temperature_2m', 'relative_humidity_2m', 'weather_code', 'precipitation']:
+        corr_values = compute_time_lagged_correlation(df_all, col, lags)
+        fig_corr = go.Figure()
+        fig_corr.add_trace(go.Scatter(x=lags, y=corr_values, mode='lines+markers'))
+        fig_corr.update_layout(title=f"AQI vs {col} - Time-Lagged Correlation",
+                               xaxis_title="Lag (hours)", yaxis_title="Correlation Coefficient")
+        st.plotly_chart(fig_corr)
