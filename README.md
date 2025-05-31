@@ -1,7 +1,7 @@
 # Machine Learning App for Predicting Aqi
 
 <p align="center" width="100%">
-    <img width="100%" src="https://github.com/PanosKats/OpenUp-Thessaloniki-Climate-2025/blob/master/Logo.png">
+    <img width="75%" src="https://github.com/PanosKats/OpenUp-Thessaloniki-Climate-2025/blob/master/Logo.png">
 </p>
 
 
