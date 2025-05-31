@@ -19,4 +19,4 @@ This App provides interactive forecasting and of Thessaloniki's Air Quality Inde
 
 ## Youtube Video
 
-[![Youtube Video](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/zrmrQNX4zbo))
+[![Youtube Video](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/zrmrQNX4zbo)
